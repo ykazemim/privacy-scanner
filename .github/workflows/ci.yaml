@@ -1,0 +1,102 @@
+name: Privacy Scanner CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Test editable installation (pip install -e .)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Verify CLI console script entry point
+        run: |
+          privacy-scanner --help
+
+      - name: Run test suite
+        run: |
+          python -m unittest discover -s tests -v
+
+  pipx-and-packaging:
+    name: Pipx Install & Packaging Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pipx and build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pipx build twine
+
+      - name: Test pipx installation
+        run: |
+          pipx install .
+          privacy-scanner --help
+          pipx list
+
+      - name: Build wheel and sdist
+        run: |
+          python -m build
+
+      - name: Check package distribution metadata
+        run: |
+          twine check --strict dist/*
+
+  lint-and-audit:
+    name: Lint & Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Ruff and Bandit
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff bandit
+
+      - name: Run Ruff (Linter)
+        run: |
+          ruff check .
+
+      - name: Run Bandit (Security)
+        run: |
+          bandit -c pyproject.toml -r privacy_scanner.py
